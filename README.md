@@ -148,7 +148,8 @@ slideshow. `config.example.lua` in this repo is the same file with comments.
 | `sizing.fill` | `blur` | What fills the uncovered space: `blur`, `black`, `solid` |
 | `sizing.blur_strength` | `0.8` | `0`–`1.5` |
 | `sizing.darken` | `0.12` | How much the blurred fill is dimmed, `0`–`0.9` |
-| `overlay.clock` / `.date` / `.caption` | `false` | Text over the photo (not implemented yet) |
+| `overlay.clock` / `.date` / `.caption` | `false` | Text over the photo: time, weekday+date, and the photo's own date and place |
+| `overlay.position` | `bottom-left` | `bottom-left`, `bottom-right`, `top-left`, `top-right` |
 | `monitors.mode` | `same` | `same` photo on every screen, or `independent` |
 | `cache.dir` | `~/.cache/oimmich` | Image + manifest cache |
 | `cache.max_gb` | `2` | Cache size cap, evicted oldest-first |
@@ -170,6 +171,7 @@ manifest.json            plugin manifest, validated by `omarchy plugin validate`
 Service.qml              idle trigger, queue, prefetch, per-monitor overlays
 components/Slide.qml     one photo: blurred crop fill + fitted overlay
 components/Crossfade.qml two Slides, cross-dissolved, old one freed after
+components/Overlay.qml   clock, date and the photo's own caption in a corner
 scripts/config-to-json.lua  config.lua -> merged, validated JSON (Lua, no deps)
 scripts/immich.sh        the only thing that talks to Immich (curl + jq)
 config.example.lua       documented config

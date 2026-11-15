@@ -41,6 +41,7 @@ local DEFAULTS = {
     clock = false,
     date = false,
     caption = false,
+    position = "bottom-left",
   },
   monitors = {
     mode = "same",
@@ -59,6 +60,7 @@ local RULES = {
   ["sizing.quality"] = { enum = { "preview", "fullsize" } },
   ["sizing.fill"] = { enum = { "blur", "black", "solid" } },
   ["monitors.mode"] = { enum = { "same", "independent" } },
+  ["overlay.position"] = { enum = { "bottom-left", "bottom-right", "top-left", "top-right" } },
   ["display.idle_seconds"] = { int = true, min = 0, max = 86400 },
   ["display.seconds_per_photo"] = { int = true, min = 3, max = 3600 },
   ["display.crossfade_ms"] = { int = true, min = 0, max = 10000 },

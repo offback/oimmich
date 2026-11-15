@@ -44,9 +44,10 @@ return {
   },
 
   overlay = {
-    clock = false,       -- small dim clock in a corner
-    date = false,
-    caption = false,     -- photo date + place, when Immich has it
+    clock = false,       -- time, bottom-left by default
+    date = false,        -- weekday and date
+    caption = false,     -- the photo's own date and place, when Immich has it
+    position = "bottom-left",  -- bottom-left | bottom-right | top-left | top-right
   },
 
   monitors = {

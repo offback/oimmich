@@ -278,6 +278,20 @@ ext_for() {
   esac
 }
 
+# Caption data for one asset: the photo's own date and where it was taken.
+# Cached beside the image so a repeat visit costs nothing.
+caption_json() {
+  local dest=$1 id=$2 cap="${1%.*}.caption.json"
+  if [[ ! -s $cap ]]; then
+    api_get "/api/assets/$id" 2>/dev/null |
+      jq -c '{date: (.fileCreatedAt // .localDateTime // ""),
+              place: ([.exifInfo.city, .exifInfo.state, .exifInfo.country]
+                      | map(select(. != null and . != "")) | join(", "))}' > "$cap" 2>/dev/null || true
+    [[ -s $cap ]] || printf '{"date":"","place":""}\n' > "$cap"
+  fi
+  cat "$cap"
+}
+
 cmd_fetch() {
   local id=${ARG:-}
   is_uuid "$id" || die "fetch needs a UUID asset id, got: $id"
@@ -286,7 +300,7 @@ cmd_fetch() {
   existing=$(find "$IMG_DIR" -maxdepth 1 -name "$id.*" -print -quit)
   if [[ -n $existing && -s $existing ]]; then
     touch "$existing"   # LRU: usage is recency
-    printf '%s\n' "$existing"
+    printf '%s\n%s\n' "$existing" "$(caption_json "$existing" "$id")"
     return 0
   fi
 
@@ -316,7 +330,7 @@ cmd_fetch() {
 
   local dest="$IMG_DIR/$id.$(ext_for "$ctype")"
   mv -f "$tmp" "$dest"
-  printf '%s\n' "$dest"
+  printf '%s\n%s\n' "$dest" "$(caption_json "$dest" "$id")"
 }
 
 # ---------------------------------------------------------------- prune

@@ -40,6 +40,8 @@ Item {
   property var pending: []          // asset ids waiting to be downloaded
   property string wanted: ""        // id the UI is waiting for
   property string current: ""       // file path on screen right now
+  property string currentId: ""     // asset id of the file on screen
+  property var captions: ({})       // asset id -> { date, place }
   property bool shown: false
   property bool sessionLocked: false
   // True once the overlay has been up long enough that input is real input: a
@@ -51,6 +53,10 @@ Item {
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
   readonly property int fadeMs: cfg && cfg.display ? Number(cfg.display.crossfade_ms) || 0 : 1200
   readonly property int displayMs: cfg && cfg.display ? (Number(cfg.display.seconds_per_photo) || 30) * 1000 : 30000
+  readonly property var currentCaption: (currentId !== "" && captions[currentId]) ? captions[currentId] : ({})
+  readonly property string captionPlace: currentCaption.place || ""
+  readonly property string captionDate: currentCaption.date
+    ? Qt.formatDate(new Date(currentCaption.date), "d MMM yyyy") : ""
   readonly property int idleMs: idleOverride !== ""
     ? Number(idleOverride)
     : (cfg && cfg.display ? (Number(cfg.display.idle_seconds) || 0) * 1000 : 0)
@@ -111,6 +117,7 @@ Item {
 
     if (paths[id]) {
       current = paths[id]
+      currentId = id
       logEvent("show-cached")
       fillPrefetch()
       return
@@ -232,8 +239,19 @@ Item {
     property string fetchedPath: ""
 
     onExited: function (code) {
-      var path = String(fetchOut.text || "").trim()
+      var lines = String(fetchOut.text || "").split("\n").map(function (l) { return l.trim() })
+      var path = lines.length > 0 ? lines[0] : ""
       if (code === 0 && path !== "") {
+        if (lines.length > 1 && lines[1] !== "") {
+          try {
+            var meta = JSON.parse(lines[1])
+            var caps = root.captions
+            caps[fetchProc.assetId] = meta
+            root.captions = caps
+          } catch (e) {
+            // A caption is decoration: never let it break showing the photo.
+          }
+        }
         // Qt writes through a JS object: reassign so bindings notice.
         var next = root.paths
         next[fetchProc.assetId] = path
@@ -241,6 +259,7 @@ Item {
 
         if (root.shown && root.wanted === fetchProc.assetId) {
           root.current = path
+          root.currentId = fetchProc.assetId
           root.logEvent("show-downloaded")
           root.fillPrefetch()
         }
@@ -390,6 +409,17 @@ Item {
         blurStrength: root.cfg && root.cfg.sizing ? Number(root.cfg.sizing.blur_strength) : 1.0
         darken: root.cfg && root.cfg.sizing ? Number(root.cfg.sizing.darken) : 0.08
         kenBurns: root.cfg && root.cfg.display ? !!root.cfg.display.ken_burns : true
+      }
+
+      Overlay {
+        anchors.fill: parent
+        showClock: root.cfg && root.cfg.overlay ? !!root.cfg.overlay.clock : false
+        showDate: root.cfg && root.cfg.overlay ? !!root.cfg.overlay.date : false
+        showCaption: root.cfg && root.cfg.overlay ? !!root.cfg.overlay.caption : false
+        position: root.cfg && root.cfg.overlay && root.cfg.overlay.position
+          ? String(root.cfg.overlay.position) : "bottom-left"
+        captionPlace: root.captionPlace
+        captionDate: root.captionDate
       }
 
       // Any key or pointer movement dismisses, the way the terminal screensaver
