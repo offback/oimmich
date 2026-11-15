@@ -63,6 +63,11 @@ KEY=$(tr -d '[:space:]' < "$KEY_FILE")
 
 MANIFEST="$CACHE_DIR/manifest.json"
 MANIFEST_STAMP="$CACHE_DIR/manifest.json.at"
+# Signature of the source selection. A cached manifest is only valid for the
+# albums/date window/filters it was built from: without this, editing
+# source.albums in config.lua changed nothing until the cache aged out, which
+# reads as "my config is ignored".
+MANIFEST_SRC="$CACHE_DIR/manifest.json.src"
 IMG_DIR="$CACHE_DIR/img"
 mkdir -p "$IMG_DIR"
 
@@ -127,54 +132,89 @@ build_manifest() {
     all_albums=$(api_get /api/albums)
     while IFS= read -r ref; do
       if is_uuid "$ref"; then
-        id=$ref
+        album_ids+=("$ref")
       else
-        id=$(jq -r --arg n "$ref" '.[] | select(.albumName == $n) | .id' <<<"$all_albums" | head -1)
-        [[ -n $id ]] || die "album not found: $ref"
+        # A name can match more than one album (Immich happily holds two called
+        # "Camera"), and silently taking the first would hide half the photos:
+        # add every match.
+        mapfile -t matched < <(jq -r --arg n "$ref" '.[] | select(.albumName == $n) | .id' <<<"$all_albums")
+        (( ${#matched[@]} > 0 )) || die "album not found: $ref"
+        album_ids+=("${matched[@]}")
       fi
-      album_ids+=("$id")
     done <<<"$(jq -r '.[]' <<<"$ALBUMS")"
   fi
 
   local filter_json="{}"
   if (( ${#album_ids[@]} > 0 )); then
-    filter_json=$(printf '%s\n' "${album_ids[@]}" | jq -R . | jq -s -c '{albumIds:{all:.}}')
+    # `any` is the union: photos from any of the chosen albums. `all` would mean
+    # "in every one of them", which is empty for two unrelated albums.
+    filter_json=$(printf '%s\n' "${album_ids[@]}" | jq -R . | jq -s -c '{albumIds:{any:.}}')
   fi
 
-  # Whole library (or the chosen albums), paged. A page that comes back short is
-  # retried before it is believed: the server can return a partial page under
-  # load, and silently stopping there would cache a truncated library for the
-  # whole refresh interval. Anything still wrong fails the build rather than
-  # writing a manifest that quietly lost photos.
-  local page=1 page_json count=0 body items tries
-  while (( page <= 200 )); do
-    body=$(jq -cn --argjson f "$filter_json" --argjson p "$page" \
-      '{size:1000, page:$p, type:"IMAGE"}
-       + (if ($f | length) > 0 then {filter: $f} else {} end)')
+  # Two paging shapes, because Immich 3.2 moved to cursors: a `filter` object
+  # cannot be combined with the deprecated `page` field (the server answers
+  # "Deprecated field page cannot be combined with filter"), while the plain
+  # whole-library query still works by page number. Every page is retried before
+  # it is believed and the build fails rather than caching a truncated library.
+  local body items count tries
+  if [[ $filter_json != "{}" ]]; then
+    # Album mode: cursor walk. `type` is left out — it is rejected alongside a
+    # filter — and the jq pass below keeps only image mimetypes.
+    local cursor="" next_cursor walk=0
+    while (( walk < 400 )); do
+      walk=$((walk + 1))
+      body=$(jq -cn --argjson f "$filter_json" --arg c "$cursor" \
+        '{size:1000, filter:$f} + (if $c != "" then {cursor:$c} else {} end)')
 
-    tries=0
-    while :; do
-      tries=$((tries + 1))
-      page_json=$(api_post /api/search/metadata "$body") || page_json=""
-      count=$(jq -er '.assets.count' <<<"${page_json:-{\}}" 2>/dev/null) || count=-1
-      items=$(jq -er '.assets.items | length' <<<"${page_json:-{\}}" 2>/dev/null) || items=-1
-      (( count >= 0 && items == count )) && break
-      if (( tries >= 3 )); then
-        die "page $page failed after $tries attempts (items=$items count=$count)"
-      fi
-      sleep $(( tries * 2 ))
+      tries=0
+      while :; do
+        tries=$((tries + 1))
+        page_json=$(api_post /api/search/metadata "$body") || page_json=""
+        [[ -n $page_json ]] || page_json='{}'
+        items=$(jq -er '.assets.items | length' <<<"$page_json" 2>/dev/null) || items=-1
+        next_cursor=$(jq -r '.assets.nextCursor // empty' <<<"$page_json" 2>/dev/null) || next_cursor=""
+        (( items >= 0 )) && break
+        (( tries >= 3 )) && die "album page $walk failed after $tries attempts"
+        sleep $(( tries * 2 ))
+      done
+
+      (( items == 0 )) && break
+      jq -c '.assets.items[] | {id, w: .width, h: .height, mime: .originalMimeType,
+             type, date: .fileCreatedAt, name: .originalFileName}' <<<"$page_json" >> "$tmp_raw"
+      [[ -z $next_cursor ]] && break
+      cursor=$next_cursor
     done
+    (( walk >= 400 )) && note "warning: manifest stopped at the 400 page cap"
+  else
+    # Whole library: numbered pages, server-side IMAGE filter.
+    local page=1
+    while (( page <= 400 )); do
+      body=$(jq -cn --argjson p "$page" '{size:1000, page:$p, type:"IMAGE"}')
 
-    (( count == 0 )) && break
-    jq -c '.assets.items[] | {id, w: .width, h: .height, mime: .originalMimeType,
-           type, date: .fileCreatedAt, name: .originalFileName}' <<<"$page_json" >> "$tmp_raw"
-    # A short-but-non-empty page is not the end: the server has been seen to
-    # return 672 on one page and full pages after it, and treating that as the
-    # last page silently dropped fifteen thousand photos from the manifest. Only
-    # an empty page ends the walk.
-    page=$((page + 1))
-  done
-  (( page > 400 )) && note "warning: manifest stopped at the 400 page cap"
+      tries=0
+      while :; do
+        tries=$((tries + 1))
+        page_json=$(api_post /api/search/metadata "$body") || page_json=""
+        [[ -n $page_json ]] || page_json='{}'
+        count=$(jq -er '.assets.count' <<<"$page_json" 2>/dev/null) || count=-1
+        items=$(jq -er '.assets.items | length' <<<"$page_json" 2>/dev/null) || items=-1
+        (( count >= 0 && items == count )) && break
+        if (( tries >= 3 )); then
+          die "page $page failed after $tries attempts (items=$items count=$count)"
+        fi
+        sleep $(( tries * 2 ))
+      done
+
+      (( count == 0 )) && break
+      jq -c '.assets.items[] | {id, w: .width, h: .height, mime: .originalMimeType,
+             type, date: .fileCreatedAt, name: .originalFileName}' <<<"$page_json" >> "$tmp_raw"
+      # A short-but-non-empty page is not the end: the server has been seen to
+      # return 672 on one page and full pages after it, and treating that as the
+      # last page silently dropped fifteen thousand photos.
+      page=$((page + 1))
+    done
+    (( page > 400 )) && note "warning: manifest stopped at the 400 page cap"
+  fi
 
   # Dedupe (an asset can sit in two albums), drop macOS AppleDouble stubs like
   # "._IMG_0109.jpg" (they carry no media and 404 on every fetch), drop anything
@@ -200,10 +240,14 @@ cmd_list() {
   local force=0
   [[ ${ARG:-} == "--force" ]] && force=1
 
+  # Which photos the manifest should hold, so an edit to the source block
+  # rebuilds now instead of after refresh_minutes.
+  local sig age
+  sig=$(jq -Sc '.config.source' "$CFG" | sha256sum | cut -d' ' -f1)
+
   if (( ! force )) && [[ -s $MANIFEST && -s $MANIFEST_STAMP ]]; then
-    local age
     age=$(( $(date +%s) - $(cat "$MANIFEST_STAMP") ))
-    if (( age < REFRESH_MIN * 60 )); then
+    if (( age < REFRESH_MIN * 60 )) && [[ $(cat "$MANIFEST_SRC" 2>/dev/null) == "$sig" ]]; then
       cat "$MANIFEST"
       return 0
     fi
@@ -215,6 +259,7 @@ cmd_list() {
   printf '%s\n' "$out" > "$tmp"
   mv -f "$tmp" "$MANIFEST"
   date +%s > "$MANIFEST_STAMP"
+  printf '%s\n' "$sig" > "$MANIFEST_SRC"
   printf '%s\n' "$out"
 }
 

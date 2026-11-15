@@ -110,7 +110,20 @@ Any key or pointer movement dismisses it; the session lock cancels it.
 
 `~/.config/omarchy/oimmich/config.lua` — a short Lua file, because
 Lua is already on every Omarchy box (Hyprland's own config is Lua here) and it
-allows comments. It hot-reloads on save: no shell restart.
+allows comments. **It hot-reloads on save: no restart, no reload command.** The
+file's mtime is polled every 1.5s; a change is re-read and applied within a
+couple of seconds, and while the slideshow is up the new timing, blur and
+opacity take effect on the next frame.
+
+Two exceptions worth knowing:
+
+- Changing `source.*` (albums, date window, order) rebuilds the photo list,
+  which walks your whole library: expect a pause of a few seconds for a curated
+  album, a minute or so for a very large library. It happens on save, not after
+  `cache.refresh_minutes`.
+- A config with errors is reported on the shell console (`oimmich config
+  errors: …`) and the **last good config keeps running** — a typo will not blank
+  your screensaver.
 
 Missing keys fall back to the defaults below; unknown keys, wrong types and
 out-of-range values are reported on the shell console instead of breaking the
