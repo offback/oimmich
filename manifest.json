@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/omarchy/omarchy/main/schemas/plugin.json",
+  "schemaVersion": 1,
+  "id": "io.github.offback.immich-screensaver",
+  "name": "Immich Screensaver",
+  "version": "0.1.0",
+  "author": "Philip Geer",
+  "license": "MIT",
+  "description": "Replaces the idle screensaver with photos from your Immich server: fitted to the screen, with a blurred copy of the same photo filling the space around them.",
+  "repository": "https://github.com/offback/omarchy-immich-screensaver",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

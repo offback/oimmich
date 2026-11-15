@@ -1,0 +1,5 @@
+# Qt/QML language server cache
+.qmlls.ini
+# editor/OS noise
+*.swp
+.DS_Store
