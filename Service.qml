@@ -4,7 +4,7 @@ import Quickshell.Io
 import Quickshell.Wayland
 import "components"
 
-// omarchy-immich-screensaver — an Immich photo slideshow that takes the idle
+// oimmich — an Immich photo slideshow that takes the idle
 // screensaver's place.
 //
 // Runs inside the Omarchy shell's long-lived Quickshell process, alongside the
@@ -27,10 +27,10 @@ Item {
     var d = String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "")
     return d.charAt(d.length - 1) === "/" ? d : d + "/"
   }
-  readonly property string configPath: Quickshell.env("IMMICH_SCREENSAVER_CONFIG")
-    || (home + "/.config/omarchy/immich-screensaver/config.lua")
+  readonly property string configPath: Quickshell.env("OIMMICH_CONFIG")
+    || (home + "/.config/omarchy/oimmich/config.lua")
   // Lets the dev harness shorten the idle timer without touching the user config.
-  readonly property var idleOverride: Quickshell.env("IMMICH_SCREENSAVER_IDLE_MS") || ""
+  readonly property var idleOverride: Quickshell.env("OIMMICH_IDLE_MS") || ""
 
   property var cfg: null
   property var meta: ({})
@@ -47,7 +47,7 @@ Item {
   property bool inputArmed: false
   property string lastEvent: "starting"
 
-  readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/omarchy-immich-screensaver")
+  readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/oimmich")
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
   readonly property int fadeMs: cfg && cfg.display ? Number(cfg.display.crossfade_ms) || 0 : 1200
   readonly property int displayMs: cfg && cfg.display ? (Number(cfg.display.seconds_per_photo) || 30) * 1000 : 30000
@@ -57,7 +57,7 @@ Item {
 
   function logEvent(event) {
     lastEvent = event
-    console.log("immich-screensaver " + event)
+    console.log("oimmich " + event)
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -150,7 +150,7 @@ Item {
       waitForEnd: true
       onStreamFinished: {
         var msg = String(text).trim()
-        if (msg !== "") console.log("immich-screensaver config stderr: " + msg)
+        if (msg !== "") console.log("oimmich config stderr: " + msg)
       }
     }
     stdout: StdioCollector {
@@ -160,7 +160,7 @@ Item {
         try {
           payload = JSON.parse(text)
         } catch (e) {
-          console.log("immich-screensaver config unreadable: " + e)
+          console.log("oimmich config unreadable: " + e)
           return
         }
         root.meta = payload.meta || ({})
@@ -168,14 +168,14 @@ Item {
         // Hold the last good config when the new one has errors: a typo in the
         // Lua file must not blank the screensaver mid-run.
         if (root.meta.errors && root.meta.errors.length > 0) {
-          console.log("immich-screensaver config errors: " + root.meta.errors.join("; "))
+          console.log("oimmich config errors: " + root.meta.errors.join("; "))
           if (root.cfg) return
         }
         root.cfg = payload.config
-        console.log("immich-screensaver config loaded: idle=" + (payload.config.display.idle_seconds) + "s per=" + (payload.config.display.seconds_per_photo) + "s")
+        console.log("oimmich config loaded: idle=" + (payload.config.display.idle_seconds) + "s per=" + (payload.config.display.seconds_per_photo) + "s")
 
         if (root.meta.unknown && root.meta.unknown.length > 0) {
-          console.log("immich-screensaver unknown config keys: " + root.meta.unknown.join(", "))
+          console.log("oimmich unknown config keys: " + root.meta.unknown.join(", "))
         }
         root.refreshManifest()
       }
@@ -197,12 +197,12 @@ Item {
         try {
           list = JSON.parse(text)
         } catch (e) {
-          console.log("immich-screensaver manifest unreadable: " + e)
+          console.log("oimmich manifest unreadable: " + e)
           return
         }
         root.manifest = list
         root.refillQueue()
-        console.log("immich-screensaver manifest loaded: " + list.length + " photos")
+        console.log("oimmich manifest loaded: " + list.length + " photos")
         if (root.shown && root.current === "") root.showNext()
       }
     }
@@ -362,7 +362,7 @@ Item {
       visible: root.shown
       color: "black"
       anchors { top: true; bottom: true; left: true; right: true }
-      WlrLayershell.namespace: "omarchy-immich-screensaver"
+      WlrLayershell.namespace: "oimmich"
       WlrLayershell.layer: WlrLayer.Overlay
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
       exclusionMode: ExclusionMode.Ignore

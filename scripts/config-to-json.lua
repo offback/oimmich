@@ -13,7 +13,7 @@
 local DEFAULTS = {
   server = {
     url = "https://immich.example.com",
-    api_key_file = "~/.config/omarchy/immich-screensaver/api-key",
+    api_key_file = "~/.config/omarchy/oimmich/api-key",
     verify_tls = true,
   },
   source = {
@@ -46,7 +46,7 @@ local DEFAULTS = {
     mode = "same",
   },
   cache = {
-    dir = "~/.cache/omarchy-immich-screensaver",
+    dir = "~/.cache/oimmich",
     max_gb = 2,
     refresh_minutes = 60,
   },

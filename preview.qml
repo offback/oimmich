@@ -12,7 +12,7 @@ Window {
   visible: true
   visibility: Window.FullScreen
   color: "black"
-  title: "immich-screensaver preview"
+  title: "oimmich preview"
 
   property var list: []
   property int idx: -1

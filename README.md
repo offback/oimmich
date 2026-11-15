@@ -1,4 +1,4 @@
-# Immich Screensaver for Omarchy
+# oimmich for Omarchy
 
 Your Immich library, on your idle screen. Photos are fitted whole to the screen
 and the space they cannot fill is filled with a blown-up, blurred copy of the
@@ -29,10 +29,10 @@ blurred side fill, the 16:9 photo covers the screen with nothing to fill.
 **1. Add the plugin**
 
 ```bash
-omarchy plugin add https://github.com/offback/omarchy-immich-screensaver.git --enable
+omarchy plugin add https://github.com/offback/oimmich.git --enable
 ```
 
-That clones it into `~/.config/omarchy/plugins/io.github.offback.immich-screensaver/`
+That clones it into `~/.config/omarchy/plugins/io.github.offback.oimmich/`
 and the shell mounts it. Change the id first if you forked this under a different
 GitHub name: it appears in `manifest.json` and must match the folder name.
 
@@ -51,9 +51,9 @@ Nothing else: no admin scopes, no write/upload/delete. The key never goes in thi
 repo or in the config file — it lives in its own `0600` file:
 
 ```bash
-install -d -m 700 ~/.config/omarchy/immich-screensaver
-install -m 600 /dev/null ~/.config/omarchy/immich-screensaver/api-key
-omarchy-launch-editor ~/.config/omarchy/immich-screensaver/api-key
+install -d -m 700 ~/.config/omarchy/oimmich
+install -m 600 /dev/null ~/.config/omarchy/oimmich/api-key
+omarchy-launch-editor ~/.config/omarchy/oimmich/api-key
 ```
 
 Paste the key, save, done. (`read -rsp` works too if you prefer the terminal.)
@@ -74,8 +74,8 @@ and the Omarchy lock screen draws above it either way.
 **4. Check it**
 
 ```bash
-~/.config/omarchy/plugins/io.github.offback.immich-screensaver/scripts/immich.sh check \
-  ~/.config/omarchy/immich-screensaver/config.lua
+~/.config/omarchy/plugins/io.github.offback.oimmich/scripts/immich.sh check \
+  ~/.config/omarchy/oimmich/config.lua
 ```
 
 ```
@@ -89,14 +89,14 @@ images  157183 bytes for one preview  (asset.view ok)
 Then wait for the idle timeout, or force it immediately:
 
 ```bash
-IMMICH_SCREENSAVER_IDLE_MS=4000 quickshell -p ~/.config/omarchy/plugins/io.github.offback.immich-screensaver
+OIMMICH_IDLE_MS=4000 quickshell -p ~/.config/omarchy/plugins/io.github.offback.oimmich
 ```
 
 Any key or pointer movement dismisses it; the session lock cancels it.
 
 ## Configuration
 
-`~/.config/omarchy/immich-screensaver/config.lua` — a short Lua file, because
+`~/.config/omarchy/oimmich/config.lua` — a short Lua file, because
 Lua is already on every Omarchy box (Hyprland's own config is Lua here) and it
 allows comments. It hot-reloads on save: no shell restart.
 
@@ -107,7 +107,7 @@ slideshow. `config.example.lua` in this repo is the same file with comments.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `server.url` | `https://immich.example.com` | Your Immich server |
-| `server.api_key_file` | `~/.config/omarchy/immich-screensaver/api-key` | Path to the key file, `0600` |
+| `server.api_key_file` | `~/.config/omarchy/oimmich/api-key` | Path to the key file, `0600` |
 | `server.verify_tls` | `true` | `false` only for a self-signed cert |
 | `source.albums` | `{}` (whole library) | Album names or UUIDs |
 | `source.mode` | `shuffle` | `shuffle`, `newest`, `oldest` |
@@ -125,7 +125,7 @@ slideshow. `config.example.lua` in this repo is the same file with comments.
 | `sizing.darken` | `0.12` | How much the blurred fill is dimmed, `0`–`0.9` |
 | `overlay.clock` / `.date` / `.caption` | `false` | Text over the photo (not implemented yet) |
 | `monitors.mode` | `same` | `same` photo on every screen, or `independent` |
-| `cache.dir` | `~/.cache/omarchy-immich-screensaver` | Image + manifest cache |
+| `cache.dir` | `~/.cache/oimmich` | Image + manifest cache |
 | `cache.max_gb` | `2` | Cache size cap, evicted oldest-first |
 | `cache.refresh_minutes` | `60` | How often the photo list is refreshed |
 
@@ -167,13 +167,13 @@ photo is decoded at screen size, not native size.
 ## Uninstall
 
 ```bash
-omarchy plugin remove io.github.offback.immich-screensaver
+omarchy plugin remove io.github.offback.oimmich
 jq '.idle.screensaver = 150' ~/.config/omarchy/shell.json > /tmp/shell.json \
   && mv /tmp/shell.json ~/.config/omarchy/shell.json
 ```
 
 Cache and key are yours to keep or delete:
-`rm -rf ~/.cache/omarchy-immich-screensaver ~/.config/omarchy/immich-screensaver`.
+`rm -rf ~/.cache/oimmich ~/.config/omarchy/oimmich`.
 
 ## Troubleshooting
 
@@ -185,7 +185,7 @@ Cache and key are yours to keep or delete:
 | Nothing happens when idle | `display.idle_seconds` is `0`, or another idle inhibitor is active |
 | Slideshow flashes and disappears | pointer/cursor over the screen moving during the arm window |
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
-| Config changes ignored | check the shell console for `immich-screensaver config errors:` |
+| Config changes ignored | check the shell console for `oimmich config errors:` |
 
 Config and script problems are reported on the shell's console
 (`journalctl --user -f` or the terminal that launched it).
@@ -194,7 +194,7 @@ Config and script problems are reported on the shell's console
 
 ```bash
 # run the plugin in a throwaway shell, no effect on the running desktop
-IMMICH_SCREENSAVER_IDLE_MS=4000 QT_ASSUME_STDERR_HAS_CONSOLE=1 \
+OIMMICH_IDLE_MS=4000 QT_ASSUME_STDERR_HAS_CONSOLE=1 \
   quickshell -p .
 
 # render one photo in a plain window, cycling cached previews

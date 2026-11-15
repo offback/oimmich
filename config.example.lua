@@ -1,4 +1,4 @@
--- omarchy-immich-screensaver: user configuration
+-- oimmich: user configuration
 -- Saved changes reload the screensaver automatically. Every option shown here is
 -- a default; delete a line to fall back to it.
 
@@ -7,7 +7,7 @@ return {
     url = "https://immich.example.com",
     -- The API key lives in its own 0600 file, never in this repo.
     -- Create it: Immich > Account Settings > API Keys > New (asset.read, album.read)
-    api_key_file = "~/.config/omarchy/immich-screensaver/api-key",
+    api_key_file = "~/.config/omarchy/oimmich/api-key",
     verify_tls = true,
   },
 
@@ -54,7 +54,7 @@ return {
   },
 
   cache = {
-    dir = "~/.cache/omarchy-immich-screensaver",
+    dir = "~/.cache/oimmich",
     max_gb = 2,
     -- How often to refresh the photo list from Immich, in minutes.
     refresh_minutes = 60,
