@@ -68,8 +68,20 @@ jq '.idle.screensaver = 0' ~/.config/omarchy/shell.json > /tmp/shell.json \
 ```
 
 Or edit `~/.config/omarchy/shell.json` by hand — `idle.screensaver: 0` disables
-it. Leave `idle.lock` alone: our slideshow cancels itself when the session locks,
-and the Omarchy lock screen draws above it either way.
+it. `idle.lock` is untouched by the plugin: the slideshow cancels itself when the
+session locks, and the lock screen draws above it either way.
+
+Both keys are **seconds since the user went idle**, not delays after each other.
+So if the photos should start at 60s and the screen should lock ten minutes
+after the photos start, set the plugin's `display.idle_seconds = 60` and:
+
+```bash
+jq '.idle.lock = 660' ~/.config/omarchy/shell.json > /tmp/shell.json \
+  && mv /tmp/shell.json ~/.config/omarchy/shell.json
+```
+
+`660 = 60 + 600`. Setting it to `600` would lock nine minutes after the photos
+start, not ten.
 
 **4. Check it**
 
