@@ -12,7 +12,7 @@ Item {
   property bool showDate: false
   property bool showCaption: false
   property string position: "bottom-left"   // bottom-left | bottom-right | top-left | top-right
-  property string captionPlace: ""          // "Greenville, South Carolina"
+  property string captionPlace: ""          // "City, Region" as Immich has it
   property string captionDate: ""           // already formatted, e.g. "14 Nov 2026"
   property color textColor: "#f4f4f4"
   property int margin: 36
