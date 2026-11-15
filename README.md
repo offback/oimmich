@@ -10,7 +10,10 @@ Built as an Omarchy shell plugin, so it installs with one command and survives
 
 | Portrait | Landscape |
 | --- | --- |
-| ![portrait](docs/screenshot-portrait.png) | ![landscape](docs/screenshot-landscape.png) |
+| ![portrait](docs/screenshot-portrait.jpg) | ![landscape](docs/screenshot-landscape.jpg) |
+
+Both are real renders from the plugin at 1920×1080 — the portrait shows the
+blurred side fill, the 16:9 photo covers the screen with nothing to fill.
 
 ## Requirements
 
