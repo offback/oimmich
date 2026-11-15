@@ -225,6 +225,9 @@ Config and script problems are reported on the shell's console
 OIMMICH_IDLE_MS=4000 QT_ASSUME_STDERR_HAS_CONSOLE=1 \
   quickshell -p .
 
+# show it immediately, whatever the idle state is (handy for previewing)
+OIMMICH_FORCE_SHOW=1 QT_ASSUME_STDERR_HAS_CONSOLE=1 quickshell -p .
+
 # render one photo in a plain window, cycling cached previews
 QML_XHR_ALLOW_FILE_READ=1 QT_ASSUME_STDERR_HAS_CONSOLE=1 \
   /usr/lib/qt6/bin/qml preview.qml
