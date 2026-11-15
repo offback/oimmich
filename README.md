@@ -186,6 +186,7 @@ Cache and key are yours to keep or delete:
 | Slideshow flashes and disappears | pointer/cursor over the screen moving during the arm window |
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
 | Config changes ignored | check the shell console for `oimmich config errors:` |
+| Photos never appear, log says `manifest unreadable` | the fetch script failed; the `oimmich manifest stderr:` line right after it says why — usually a wrong `server.api_key_file` |
 
 Config and script problems are reported on the shell's console
 (`journalctl --user -f` or the terminal that launched it).

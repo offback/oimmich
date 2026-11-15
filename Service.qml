@@ -190,6 +190,13 @@ Item {
   Process {
     id: manifestProc
     command: ["bash", root.pluginDir + "scripts/immich.sh", "list", root.configPath]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var msg = String(text).trim()
+        if (msg !== "") console.log("oimmich manifest stderr: " + msg)
+      }
+    }
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -214,6 +221,13 @@ Item {
     id: fetchProc
     property string assetId: ""
     command: ["bash", root.pluginDir + "scripts/immich.sh", "fetch", root.configPath, assetId]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var msg = String(text).trim()
+        if (msg !== "") console.log("oimmich fetch stderr: " + msg)
+      }
+    }
     stdout: StdioCollector { id: fetchOut; waitForEnd: true }
     property string fetchedPath: ""
 
