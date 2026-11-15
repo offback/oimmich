@@ -31,6 +31,9 @@ Item {
     || (home + "/.config/omarchy/oimmich/config.lua")
   // Lets the dev harness shorten the idle timer without touching the user config.
   readonly property var idleOverride: Quickshell.env("OIMMICH_IDLE_MS") || ""
+  // OIMMICH_FORCE_SHOW=1 shows the overlay as soon as the photo list is ready,
+  // whatever the idle state is. Previewing should not require sitting still.
+  readonly property bool forceShow: Quickshell.env("OIMMICH_FORCE_SHOW") !== ""
 
   property var cfg: null
   property var meta: ({})
@@ -218,6 +221,7 @@ Item {
         root.refillQueue()
         console.log("oimmich manifest loaded: " + list.length + " photos")
         if (root.shown && root.current === "") root.showNext()
+        if (root.forceShow && !root.shown) root.start()
       }
     }
     onExited: function (code) {
@@ -239,8 +243,16 @@ Item {
     property string fetchedPath: ""
 
     onExited: function (code) {
-      var lines = String(fetchOut.text || "").split("\n").map(function (l) { return l.trim() })
+      var lines = String(fetchOut.text || "").split(/\r?\n/).map(function (l) { return l.trim() })
       var path = lines.length > 0 ? lines[0] : ""
+
+      // The script answers with the image path and then its caption. Refuse
+      // anything that is not an absolute image path, so a mis-parsed answer can
+      // never reach an Image source (which renders as a black screen).
+      if (!/^\/.*\.(jpe?g|png|webp|avif|heic|heif)$/i.test(path)) {
+        console.log("oimmich bad-fetch-output: " + JSON.stringify(String(fetchOut.text || "").substring(0, 120)))
+        path = ""
+      }
       if (code === 0 && path !== "") {
         if (lines.length > 1 && lines[1] !== "") {
           try {
