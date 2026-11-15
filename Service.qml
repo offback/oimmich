@@ -38,6 +38,7 @@ Item {
   property var cfg: null
   property var meta: ({})
   property var manifest: []
+  readonly property var manifestList: Array.isArray(manifest) ? manifest : []
   property var queue: []
   property var paths: ({})          // asset id -> cached file path
   property var pending: []          // asset ids waiting to be downloaded
@@ -73,7 +74,11 @@ Item {
 
   function start() {
     if (shown) return
-    if (!manifest || manifest.length === 0) {
+    if (!cfg) {
+      logEvent("start-skipped: no-valid-config")
+      return
+    }
+    if (manifestList.length === 0) {
       logEvent("start-skipped: no-manifest")
       refreshManifest()
       return
@@ -106,7 +111,7 @@ Item {
   }
 
   function refillQueue() {
-    var ordered = manifest.map(function (a) { return a.id })
+    var ordered = manifestList.map(function (a) { return a.id })
     queue = (cfg && cfg.display && cfg.display.order === "sequential") ? ordered : shuffled(ordered)
   }
 
@@ -179,7 +184,11 @@ Item {
         // Lua file must not blank the screensaver mid-run.
         if (root.meta.errors && root.meta.errors.length > 0) {
           console.log("oimmich config errors: " + root.meta.errors.join("; "))
+          // With a previous good config, keep running on it. With none, stay
+          // dormant rather than falling back to defaults and showing nothing.
           if (root.cfg) return
+          console.log("oimmich config unusable: " + root.configPath + " — fix the errors above")
+          return
         }
         root.cfg = payload.config
         console.log("oimmich config loaded: idle=" + (payload.config.display.idle_seconds) + "s per=" + (payload.config.display.seconds_per_photo) + "s")
@@ -215,6 +224,10 @@ Item {
           list = JSON.parse(text)
         } catch (e) {
           console.log("oimmich manifest unreadable: " + e)
+          return
+        }
+        if (!Array.isArray(list)) {
+          console.log("oimmich manifest is not a list: " + JSON.stringify(String(text).substring(0, 120)))
           return
         }
         root.manifest = list

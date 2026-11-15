@@ -12,7 +12,8 @@ return {
   },
 
   source = {
-    -- Empty = every photo in the library. Names or UUIDs both work.
+    -- Empty = every photo in the library. Names or UUIDs both work, quoted:
+    --   albums = {"Camera", "88ca12a5-cff5-4eec-9814-30d63cc9ac42"},
     albums = {},
     -- "shuffle" | "newest" | "oldest"
     mode = "shuffle",
