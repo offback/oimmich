@@ -11,8 +11,8 @@ Item {
   property int displayMs: 30000
   property string fill: "blur"
   property color solidColor: "#0d0d0d"
-  property real blurStrength: 1.0
-  property real darken: 0.08
+  property real blurStrength: 0.8
+  property real darken: 0.12
   property bool kenBurns: true
 
   // Which layer is on top right now. The other one is free for the next photo.
