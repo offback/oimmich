@@ -170,7 +170,9 @@ local function validate(cfg, errors)
     errors[#errors + 1] = "server.api_key_file must be a path"
   end
   if not is_array(cfg.source.albums) then
-    errors[#errors + 1] = "source.albums must be a list (use {} for all photos)"
+    errors[#errors + 1] = string.format(
+      "source.albums must be a list of album names or IDs, got %s (use {} for every photo)",
+      type(cfg.source.albums))
   end
 end
 
@@ -248,7 +250,11 @@ local function main(argv)
     end
   end
 
-  cfg.source.albums = is_array(cfg.source.albums) and cfg.source.albums or {}
+  -- Only a missing value means "the whole library". A wrong one (a bare string,
+  -- a map) is left exactly as it is so validate() rejects it: coercing it to {}
+  -- would silently select every photo the key can read, which on the idle
+  -- display is a privacy problem rather than a typo.
+  if cfg.source.albums == nil then cfg.source.albums = {} end
   validate(cfg, errors)
 
   cfg.server.api_key_file = expand_home(cfg.server.api_key_file)

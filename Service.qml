@@ -63,6 +63,9 @@ Item {
   // start() refuses to run until this moment. Set when the limit is hit.
   property double fetchCooldownUntil: 0
   property bool prunedOnce: false
+  // Server + key file + cache dir of the config the in-memory library came
+  // from. A change here means `paths` and `captions` refer to another server.
+  property string dataIdentity: ""
 
   readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/oimmich")
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
@@ -127,6 +130,24 @@ Item {
     inputArmed = false
     lockPollTimer.stop()
     logEvent("hidden" + (reason ? ": " + reason : ""))
+  }
+
+  // Drop everything that belongs to the previous server. Cached image paths are
+  // keyed by asset id, so keeping them across a server change would keep showing
+  // the old library until every id happened to be replaced — and if the new
+  // server is unreachable, indefinitely. scripts/immich.sh resets its own cache
+  // for the same reason; this is the in-memory half.
+  function resetLibraryState(reason) {
+    if (shown) stop("library-changed")
+    manifest = []
+    queue = []
+    paths = ({})
+    captions = ({})
+    pending = []
+    wanted = ""
+    current = ""
+    currentId = ""
+    logEvent("library-reset:" + reason)
   }
 
   // ---------------------------------------------------------------- queueing
@@ -220,8 +241,20 @@ Item {
           console.log("oimmich config unusable: " + root.configPath + " — fix the errors above")
           return
         }
+        // A new server or key file means the previous library must not stay on
+        // screen or in memory: compare identities before the config is adopted.
+        var identity = [
+          String(payload.config.server.url),
+          String(payload.config.server.api_key_file),
+          String(payload.config.cache.dir)
+        ].join("\n")
+        var identityChanged = root.dataIdentity !== "" && identity !== root.dataIdentity
+
         root.cfg = payload.config
         console.log("oimmich config loaded: idle=" + (payload.config.display.idle_seconds) + "s per=" + (payload.config.display.seconds_per_photo) + "s")
+
+        if (identityChanged) root.resetLibraryState("server-or-key-changed")
+        root.dataIdentity = identity
 
         if (root.meta.unknown && root.meta.unknown.length > 0) {
           console.log("oimmich unknown config keys: " + root.meta.unknown.join(", "))

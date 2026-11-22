@@ -28,6 +28,13 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # Accept the user's config.lua directly. QML cannot write files, and piping the
 # merged config through stdin would need a close the caller cannot perform, so
 # the merged copy is written here, where the cache dir is already known.
+#
+# Every value below is then read from SNAP, one immutable copy of that JSON.
+# Helpers overlap by design (a fetch, a manifest refresh and a prune can run at
+# once) and each of them rewrites cache/config.json, so two separate reads of
+# that file could pair the old server URL with the new API key file — and send
+# the new key to the old server. One snapshot makes that impossible.
+SNAP=""
 if [[ $CFG == *.lua ]]; then
   merged=$(lua "$SCRIPT_DIR/config-to-json.lua" "$CFG") || die "config loader failed: $CFG"
   errors=$(jq -r '(.meta.errors // []) | join("; ")' <<<"$merged")
@@ -35,14 +42,17 @@ if [[ $CFG == *.lua ]]; then
   cache=$(jq -r '.config.cache.dir // empty' <<<"$merged")
   [[ -n $cache ]] || die "config has no cache.dir"
   mkdir -p "$cache"
-  jq -c '{config: .config}' <<<"$merged" > "$cache/config.json.tmp.$$" &&
+  SNAP=$(jq -c '{config: .config}' <<<"$merged")
+  # Still written, for tooling and for `jq .` by hand; never read back.
+  printf '%s\n' "$SNAP" > "$cache/config.json.tmp.$$" &&
     mv -f "$cache/config.json.tmp.$$" "$cache/config.json"
-  CFG="$cache/config.json"
+else
+  [[ -r $CFG ]] || die "cannot read config: $CFG"
+  SNAP=$(cat -- "$CFG")
 fi
+[[ -n $SNAP ]] || die "empty config: $CFG"
 
-[[ -r $CFG ]] || die "cannot read config: $CFG"
-
-jqr() { jq -r "$1" "$CFG"; }
+jqr() { jq -r "$1" <<<"$SNAP"; }
 
 URL=$(jqr '.config.server.url')
 KEY_FILE=$(jqr '.config.server.api_key_file')
@@ -55,7 +65,10 @@ STILLS_ONLY=$(jqr '.config.source.stills_only')
 MODE=$(jqr '.config.source.mode')
 FROM=$(jqr '.config.source.from // empty')
 TO=$(jqr '.config.source.to // empty')
-ALBUMS=$(jq -c '.config.source.albums // []' "$CFG")
+ALBUMS=$(jq -c '.config.source.albums // []' <<<"$SNAP")
+# A malformed albums value would be read as "no selection"; refuse it rather
+# than quietly walking the whole library.
+jq -e 'type == "array"' <<<"$ALBUMS" >/dev/null || die "config source.albums must be a list"
 
 [[ -r $KEY_FILE ]] || die "API key file not readable: $KEY_FILE (see README: create it 0600)"
 KEY=$(tr -d '[:space:]' < "$KEY_FILE")
@@ -68,8 +81,31 @@ MANIFEST_STAMP="$CACHE_DIR/manifest.json.at"
 # source.albums in config.lua changed nothing until the cache aged out, which
 # reads as "my config is ignored".
 MANIFEST_SRC="$CACHE_DIR/manifest.json.src"
+# Which server and key filled this cache. A cache is not portable between
+# servers, and it is not portable between accounts on the same server.
+ORIGIN_FILE="$CACHE_DIR/origin"
 IMG_DIR="$CACHE_DIR/img"
 mkdir -p "$IMG_DIR"
+
+# Bind the cache to its origin before anything is fetched. Without this, changing
+# server.url or the key left a still-fresh manifest and its images in place: the
+# previous library kept being shown under the new configuration, restarts
+# included, because an unreachable new server just means "keep the old manifest".
+# The key itself is never stored — only the first 16 hex digits of its sha256.
+ORIGIN=$(printf '%s\n%s\n' "$URL" "$(printf '%s' "$KEY" | sha256sum | cut -c1-16)" |
+         sha256sum | cut -d' ' -f1)
+if [[ ! -f $ORIGIN_FILE || $(cat "$ORIGIN_FILE" 2>/dev/null) != "$ORIGIN" ]]; then
+  had_cache=0
+  if [[ -s $MANIFEST ]]; then had_cache=1; fi
+  # In-flight downloads use a leading-dot temp name; leave those alone.
+  if [[ -n $(find "$IMG_DIR" -maxdepth 1 -type f ! -name '.*' -print -quit) ]]; then
+    had_cache=1
+  fi
+  find "$IMG_DIR" -maxdepth 1 -type f ! -name '.*' -delete 2>/dev/null || true
+  rm -f "$MANIFEST" "$MANIFEST_STAMP" "$MANIFEST_SRC"
+  printf '%s\n' "$ORIGIN" > "$ORIGIN_FILE.tmp.$$" && mv -f "$ORIGIN_FILE.tmp.$$" "$ORIGIN_FILE"
+  if (( had_cache )); then note "cache reset: server or api key changed"; fi
+fi
 
 CURL_BASE=(curl -sS --connect-timeout 5 --max-time 45 --retry 2 --retry-delay 1
            -H "x-api-key: $KEY" -H 'accept: application/json')
@@ -243,7 +279,9 @@ cmd_list() {
   # Which photos the manifest should hold, so an edit to the source block
   # rebuilds now instead of after refresh_minutes.
   local sig age
-  sig=$(jq -Sc '.config.source' "$CFG" | sha256sum | cut -d' ' -f1)
+  # The manifest is only valid for this origin and this selection.
+  sig=$(printf '%s\n%s\n' "$ORIGIN" "$(jq -Sc '.config.source' <<<"$SNAP")" |
+        sha256sum | cut -d' ' -f1)
 
   if (( ! force )) && [[ -s $MANIFEST && -s $MANIFEST_STAMP ]]; then
     age=$(( $(date +%s) - $(cat "$MANIFEST_STAMP") ))

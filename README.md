@@ -139,7 +139,7 @@ file's mtime is polled every 1.5s; a change is re-read and applied within a
 couple of seconds, and while the slideshow is up the new timing, blur and
 opacity take effect on the next frame.
 
-Two exceptions worth knowing:
+Three exceptions worth knowing:
 
 - Changing `source.*` (albums, date window, order) rebuilds the photo list,
   which walks your whole library: expect a pause of a few seconds for a curated
@@ -148,6 +148,11 @@ Two exceptions worth knowing:
 - A config with errors is reported on the shell console (`oimmich config
   errors: …`) and the **last good config keeps running** — a typo will not blank
   your screensaver.
+- Changing `server.url`, `server.api_key_file` or `cache.dir` **resets the
+  cache**: the manifest and every downloaded preview are deleted, because a
+  cache filled from one server must never be shown for another, not even after a
+  restart. The first start after upgrading does this once, since caches created
+  before this version carry no record of which server filled them.
 
 Missing keys fall back to the defaults below; unknown keys, wrong types and
 out-of-range values are reported on the shell console instead of breaking the
@@ -238,6 +243,7 @@ Cache and key are yours to keep or delete:
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
 | Config changes ignored | check the shell console for `oimmich config errors:` |
 | Photos never appear, log says `manifest unreadable` | the fetch script failed; the `oimmich manifest stderr:` line right after it says why — usually a wrong `server.api_key_file` |
+| Every photo appears after editing `source.albums` | the value is not a list — `albums = "Camera"` is rejected instead of being read as "everything" | `oimmich config errors: source.albums must be a list …` |
 | Slideshow gives up and stays away for five minutes | five consecutive download failures, so the server is unreachable: `fetch-failed:1 (5/5)`, then `fetch-cooldown: 5min` and `hidden: fetch-failures`. It tries again after the cooldown |
 
 Config and script problems are reported on the shell's console
