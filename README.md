@@ -237,7 +237,10 @@ Cache and key are yours to keep or delete:
 | --- | --- |
 | Photo list loads, every image 403s | `asset.view` missing from the key |
 | `check` fails at the albums line | `album.read` missing, or the key is wrong |
-| 404 on individual photos | Immich has no media for that asset; they are skipped |
+| 404 on individual photos | Immich has no media for that asset: skipped, and remembered for the session so it is not re-probed on every refill (`skip-missing-media`) |
+| Every photo is skipped, then `hidden: no-usable-assets` | every asset in the list answered 404 | the `skip-missing-media` lines name them; a restart probes each once |
+| `download interrupted for <id> (curl exit N)` or `short read` | the transfer did not finish — timeout, dropped connection, a proxy closing early | nothing is cached; the next attempt starts clean |
+| `image-unreadable:<id>` | a cached file vanished under a live path (eviction, or a cache reset) | the path is dropped and re-fetched; a second failure for the same asset sets it aside for the session |
 | Nothing happens when idle | `display.idle_seconds` is `0`, or another idle inhibitor is active |
 | Slideshow flashes and disappears | pointer/cursor over the screen moving during the arm window |
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
