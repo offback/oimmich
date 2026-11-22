@@ -152,8 +152,8 @@ slideshow. `config.example.lua` in this repo is the same file with comments.
 | `overlay.position` | `bottom-left` | `bottom-left`, `bottom-right`, `top-left`, `top-right` |
 | `monitors.mode` | `same` | `same` photo on every screen, or `independent` |
 | `cache.dir` | `~/.cache/oimmich` | Image + manifest cache |
-| `cache.max_gb` | `2` | Cache size cap, evicted oldest-first |
-| `cache.refresh_minutes` | `60` | How often the photo list is refreshed |
+| `cache.max_gb` | `2` | Cache size cap, evicted oldest-first. Eviction runs at startup, then every six hours |
+| `cache.refresh_minutes` | `60` | How often the photo list is refreshed. A change to `source.*` still rebuilds immediately |
 
 Minimal working config:
 
@@ -168,7 +168,7 @@ return {
 
 ```
 manifest.json            plugin manifest, validated by `omarchy plugin validate`
-Service.qml              idle trigger, queue, prefetch, per-monitor overlays
+Service.qml              idle trigger, queue, prefetch, maintenance timers, overlays
 components/Slide.qml     one photo: blurred crop fill + fitted overlay
 components/Crossfade.qml two Slides, cross-dissolved, old one freed after
 components/Overlay.qml   clock, date and the photo's own caption in a corner
@@ -214,6 +214,7 @@ Cache and key are yours to keep or delete:
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
 | Config changes ignored | check the shell console for `oimmich config errors:` |
 | Photos never appear, log says `manifest unreadable` | the fetch script failed; the `oimmich manifest stderr:` line right after it says why — usually a wrong `server.api_key_file` |
+| Slideshow gives up and stays away for five minutes | five consecutive download failures, so the server is unreachable: `fetch-failed:1 (5/5)`, then `fetch-cooldown: 5min` and `hidden: fetch-failures`. It tries again after the cooldown |
 
 Config and script problems are reported on the shell's console
 (`journalctl --user -f` or the terminal that launched it).
@@ -227,6 +228,9 @@ OIMMICH_IDLE_MS=4000 QT_ASSUME_STDERR_HAS_CONSOLE=1 \
 
 # show it immediately, whatever the idle state is (handy for previewing)
 OIMMICH_FORCE_SHOW=1 QT_ASSUME_STDERR_HAS_CONSOLE=1 quickshell -p .
+
+# run the cache eviction every 5s instead of startup + six-hourly
+OIMMICH_PRUNE_MS=5000 QT_ASSUME_STDERR_HAS_CONSOLE=1 quickshell -p .
 
 # render one photo in a plain window, cycling cached previews
 QML_XHR_ALLOW_FILE_READ=1 QT_ASSUME_STDERR_HAS_CONSOLE=1 \

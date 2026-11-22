@@ -33,7 +33,13 @@ Item {
   readonly property var idleOverride: Quickshell.env("OIMMICH_IDLE_MS") || ""
   // OIMMICH_FORCE_SHOW=1 shows the overlay as soon as the photo list is ready,
   // whatever the idle state is. Previewing should not require sitting still.
-  readonly property bool forceShow: Quickshell.env("OIMMICH_FORCE_SHOW") !== ""
+  // Quickshell.env returns null for an unset variable, and null !== "" is true,
+  // so this has to be tested for null/undefined — the plain !== "" form left the
+  // flag permanently on, which bypassed the idle timer altogether.
+  readonly property bool forceShow: {
+    var v = Quickshell.env("OIMMICH_FORCE_SHOW")
+    return v !== null && v !== undefined && String(v) !== "" && String(v) !== "0"
+  }
 
   property var cfg: null
   property var meta: ({})
@@ -52,6 +58,11 @@ Item {
   // layer surface gets a synthetic hover/focus when it maps.
   property bool inputArmed: false
   property string lastEvent: "starting"
+  // Consecutive failed downloads; reset by any success, see maxFetchFailures.
+  property int fetchFailures: 0
+  // start() refuses to run until this moment. Set when the limit is hit.
+  property double fetchCooldownUntil: 0
+  property bool prunedOnce: false
 
   readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/oimmich")
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
@@ -65,6 +76,21 @@ Item {
     ? Number(idleOverride)
     : (cfg && cfg.display ? (Number(cfg.display.idle_seconds) || 0) * 1000 : 0)
 
+  // Five failures in a row means the server is down, not that one photo is
+  // broken: Immich's 404s are handled separately as exit code 3.
+  readonly property int maxFetchFailures: 5
+  readonly property double fetchCooldownMs: 5 * 60 * 1000
+  // How often the photo list is re-requested. immich.sh still decides whether
+  // its cache is fresh (age + source signature); the timer only makes sure
+  // something asks, which nothing did before.
+  readonly property int manifestRefreshMs: cfg && cfg.cache
+    ? Math.max(1, Number(cfg.cache.refresh_minutes) || 60) * 60000 : 0
+  // Cache eviction: once at startup, then every six hours. OIMMICH_PRUNE_MS is
+  // a development knob, the same way OIMMICH_IDLE_MS is.
+  readonly property int pruneMs: Number(Quickshell.env("OIMMICH_PRUNE_MS")) > 0
+    ? Number(Quickshell.env("OIMMICH_PRUNE_MS"))
+    : 6 * 60 * 60 * 1000
+
   function logEvent(event) {
     lastEvent = event
     console.log("oimmich " + event)
@@ -76,6 +102,10 @@ Item {
     if (shown) return
     if (!cfg) {
       logEvent("start-skipped: no-valid-config")
+      return
+    }
+    if (Date.now() < fetchCooldownUntil) {
+      logEvent("start-skipped: fetch-cooldown")
       return
     }
     if (manifestList.length === 0) {
@@ -206,6 +236,13 @@ Item {
     manifestProc.running = true
   }
 
+  // Eviction is a bounded walk of the cache dir and exits immediately when the
+  // size cap is not reached, so it is safe to schedule.
+  function runPrune() {
+    if (!cfg || pruneProc.running) return
+    pruneProc.running = true
+  }
+
   Process {
     id: manifestProc
     command: ["bash", root.pluginDir + "scripts/immich.sh", "list", root.configPath]
@@ -233,6 +270,12 @@ Item {
         root.manifest = list
         root.refillQueue()
         console.log("oimmich manifest loaded: " + list.length + " photos")
+        // The cache is the only thing that grows without bound; evict once the
+        // real cache dir is known, then let pruneTimer take over.
+        if (!root.prunedOnce) {
+          root.prunedOnce = true
+          root.runPrune()
+        }
         if (root.shown && root.current === "") root.showNext()
         if (root.forceShow && !root.shown) root.start()
       }
@@ -267,6 +310,7 @@ Item {
         path = ""
       }
       if (code === 0 && path !== "") {
+        root.fetchFailures = 0
         if (lines.length > 1 && lines[1] !== "") {
           try {
             var meta = JSON.parse(lines[1])
@@ -294,7 +338,19 @@ Item {
         root.logEvent("skip-missing-media")
         if (root.shown && root.wanted === fetchProc.assetId) root.showNext()
       } else {
-        root.logEvent("fetch-failed:" + code)
+        root.fetchFailures += 1
+        root.logEvent("fetch-failed:" + code + " (" + root.fetchFailures + "/" + root.maxFetchFailures + ")")
+        if (root.fetchFailures >= root.maxFetchFailures) {
+          // The server is not answering. Without this, showNext() walks the
+          // whole queue, refills it and starts again: one child process and one
+          // curl timeout per photo, forever. Drop the pending downloads, hide,
+          // and refuse to start again for a few minutes.
+          root.pending = []
+          root.fetchCooldownUntil = Date.now() + root.fetchCooldownMs
+          root.logEvent("fetch-cooldown: " + Math.round(root.fetchCooldownMs / 60000) + "min")
+          root.stop("fetch-failures")
+          return
+        }
         if (root.shown && root.wanted === fetchProc.assetId) root.showNext()
       }
       root.pump()
@@ -311,6 +367,21 @@ Item {
         var locked = String(text || "").trim() === "true"
         root.sessionLocked = locked
         if (locked) root.stop("session-locked")
+      }
+    }
+  }
+
+  Process {
+    id: pruneProc
+    command: ["bash", root.pluginDir + "scripts/immich.sh", "prune", root.configPath]
+    // The script reports what it did on stderr ("cache ok: ..." or
+    // "pruned N file(s); ..."), so that prefix lands in the shell console next
+    // to everything else the plugin says.
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var msg = String(text).trim()
+        if (msg !== "") console.log("oimmich prune: " + msg)
       }
     }
   }
@@ -398,6 +469,25 @@ Item {
     repeat: true
     running: false
     onTriggered: if (!lockProc.running) lockProc.running = true
+  }
+
+  Timer {
+    id: manifestRefreshTimer
+    // One full refresh_minutes between requests. immich.sh still applies its
+    // own age check, so a tick that lands a second early just re-reads the
+    // cache and the next one rebuilds.
+    interval: root.manifestRefreshMs > 0 ? root.manifestRefreshMs : 3600000
+    repeat: true
+    running: root.manifestRefreshMs > 0
+    onTriggered: root.refreshManifest()
+  }
+
+  Timer {
+    id: pruneTimer
+    interval: root.pruneMs
+    repeat: true
+    running: root.cfg !== null
+    onTriggered: root.runPrune()
   }
 
   Component.onCompleted: {
