@@ -105,6 +105,12 @@ Item {
   // path in the config identical -- nothing else in the plugin could notice.
   readonly property string keyPath: (cfg && cfg.server) ? String(cfg.server.api_key_file) : ""
 
+  // A request that arrives while the process it needs is already running cannot
+  // be served by that run: the run started before the change. Remember it and
+  // re-issue it when the run lands, instead of consuming the notification.
+  property bool manifestRefreshPending: false
+  property bool configReloadPending: false
+
   function logEvent(event) {
     lastEvent = event
     console.log("oimmich " + event)
@@ -374,11 +380,31 @@ Item {
         root.refreshManifest()
       }
     }
+    onExited: function (code) {
+      if (root.configReloadPending) Qt.callLater(root.reloadConfig)
+    }
   }
 
   function refreshManifest() {
-    if (!cfg || manifestProc.running) return
+    if (!cfg) return
+    if (manifestProc.running) {
+      manifestRefreshPending = true
+      return
+    }
+    manifestRefreshPending = false
     manifestProc.running = true
+  }
+
+  // The config can change while its Lua reader is still running, and that stamp
+  // is consumed too: without the latch the edit waits for the file to change a
+  // second time.
+  function reloadConfig() {
+    if (configProc.running) {
+      configReloadPending = true
+      return
+    }
+    configReloadPending = false
+    configProc.running = true
   }
 
   // Eviction is a bounded walk of the cache dir and exits immediately when the
@@ -450,6 +476,9 @@ Item {
       }
     }
     onExited: function (code) {
+      // A key swap that landed while this list was in flight: that list was built
+      // from the previous account, so ask again now that the slot is free.
+      if (root.manifestRefreshPending) Qt.callLater(root.refreshManifest)
     }
   }
 
@@ -598,7 +627,7 @@ Item {
         }
         if (configStamp !== configWatch.stamp) {
           configWatch.stamp = configStamp
-          configProc.running = true
+          root.reloadConfig()
         }
         if (keyStamp !== configWatch.keyStamp) {
           configWatch.keyStamp = keyStamp
