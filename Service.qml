@@ -216,6 +216,22 @@ Item {
     }
   }
 
+  // A file that decodes is not broken. Clearing the strike here — not when the
+  // fetch succeeds — is deliberate: a corrupt file is served from the cache, so a
+  // "fetch succeeded" reset would loop (fail, re-fetch, fail, …) instead of ever
+  // reaching the second strike. What proves recovery is the decode.
+  function clearDecodeStrike(path) {
+    if (path === "") return
+    var id = ""
+    for (var key in paths) {
+      if (paths[key] === path) { id = key; break }
+    }
+    if (id === "" || decodeFailures[id] === undefined) return
+    var d = root.decodeFailures
+    delete d[id]
+    root.decodeFailures = d
+  }
+
   // A skipped or failed id asks for the next one through a short delay instead
   // of calling showNext() inside the process handler. Queues full of broken
   // assets then cost one process every 400ms rather than a spawn storm.
@@ -652,6 +668,7 @@ Item {
         darken: root.cfg && root.cfg.sizing ? Number(root.cfg.sizing.darken) : 0.08
         kenBurns: root.cfg && root.cfg.display ? !!root.cfg.display.ken_burns : true
         onFailed: function (path) { root.forgetPath(path) }
+        onLoaded: function (path) { root.clearDecodeStrike(path) }
       }
 
       Overlay {

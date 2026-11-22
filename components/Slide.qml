@@ -28,6 +28,9 @@ Item {
   // entry looks like from here: a path that is still valid, a file that is gone.
   // The caller drops the entry so the id is re-fetched instead of painted black.
   signal failed(string path)
+  // Emitted when the photo decodes. The caller uses it to forget an earlier
+  // decode failure for the same asset: a file that reloads fine was not broken.
+  signal loaded(string path)
   property bool reported: false
   onSourceChanged: reported = false
 
@@ -84,7 +87,9 @@ Item {
     scale: 1.0
 
     onStatusChanged: {
-      if (status === Image.Error && !root.reported) {
+      if (status === Image.Ready) {
+        root.loaded(root.source)
+      } else if (status === Image.Error && !root.reported) {
         root.reported = true
         root.failed(root.source)
       }

@@ -22,8 +22,20 @@ Item {
   // Emitted once a crossfade completes, so the caller can prefetch ahead.
   signal shown(string path)
 
-  // Passed up from whichever Slide failed to decode its file.
+  // Passed up from whichever Slide failed to decode its file, and from whichever
+  // one decoded it.
   signal failed(string path)
+  signal loaded(string path)
+
+  // Drop a path from both layers. Without this, the layer that failed keeps the
+  // path in `source`, and a re-fetch lands on the same deterministic cache path:
+  // show() then compares against visiblePath, or assigns the identical source,
+  // and the Image never reloads — the screen stays black for that asset.
+  function dropPath(path) {
+    if (!path) return
+    if (pathA === path) pathA = ""
+    if (pathB === path) pathB = ""
+  }
 
   readonly property string visiblePath: showingA ? pathA : pathB
 
@@ -61,7 +73,8 @@ Item {
     kenBurns: root.kenBurns ? 0.05 : 0
     kenBurnsMs: root.displayMs + root.fadeMs
     running: root.showingA
-    onFailed: function (path) { root.failed(path) }
+    onFailed: function (path) { root.dropPath(path); root.failed(path) }
+    onLoaded: function (path) { root.loaded(path) }
     opacity: root.showingA ? 1 : 0
     Behavior on opacity {
       NumberAnimation { duration: Math.max(0, root.fadeMs); easing.type: Easing.InOutQuad }
@@ -79,7 +92,8 @@ Item {
     kenBurns: root.kenBurns ? 0.05 : 0
     kenBurnsMs: root.displayMs + root.fadeMs
     running: !root.showingA
-    onFailed: function (path) { root.failed(path) }
+    onFailed: function (path) { root.dropPath(path); root.failed(path) }
+    onLoaded: function (path) { root.loaded(path) }
     opacity: root.showingA ? 0 : 1
     Behavior on opacity {
       NumberAnimation { duration: Math.max(0, root.fadeMs); easing.type: Easing.InOutQuad }
