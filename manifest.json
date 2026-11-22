@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.offback.oimmich",
   "name": "oimmich",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "offback",
   "license": "MIT",
   "description": "Replaces the idle screensaver with photos from your Immich server: fitted to the screen, with a blurred copy of the same photo filling the space around them.",
