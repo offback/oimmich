@@ -3,3 +3,6 @@
 # editor/OS noise
 *.swp
 .DS_Store
+# python bytecode from the test suite
+__pycache__/
+*.pyc
