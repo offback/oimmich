@@ -363,26 +363,41 @@ cmd_fetch() {
     return 0
   fi
 
-  local tmp hdr code ctype
+  local tmp hdr code ctype clen rc=0 got
   tmp=$(mktemp "$IMG_DIR/.$id.XXXXXX")
   hdr=$(mktemp)
-  code=$("${CURL_BASE[@]}" -o "$tmp" -D "$hdr" -w '%{http_code}' "$URL/api/assets/$id/thumbnail?size=$QUALITY") || true
+  # curl's exit status is the only proof the transfer finished. -w still prints
+  # 200 for a body cut short by --max-time or a dropped connection, and such a
+  # file passed the size check and then stayed in the cache for good: a corrupt
+  # photo, served as if it were a cache hit, forever.
+  code=$("${CURL_BASE[@]}" -o "$tmp" -D "$hdr" -w '%{http_code}' \
+         "$URL/api/assets/$id/thumbnail?size=$QUALITY") || rc=$?
   ctype=$(awk 'BEGIN{IGNORECASE=1} /^content-type:/ { gsub(/\r/,""); print $2; exit }' "$hdr")
+  clen=$(awk 'BEGIN{IGNORECASE=1} /^content-length:/ { gsub(/\r/,""); print $2; exit }' "$hdr")
   rm -f "$hdr"
 
-  # 404 is "this asset has no media" (an AppleDouble stub, a broken import). The
-  # caller drops the id and moves on rather than treating it as fatal.
+  # 404 first: it is an answer, not a failure, and curl exits 0 for it.
   if [[ $code == 404 ]]; then
     rm -f "$tmp"
     note "missing-media $id"
     exit 3
   fi
+  if (( rc != 0 )); then
+    rm -f "$tmp"
+    die "download interrupted for $id (curl exit $rc)"
+  fi
   [[ $code == 200 ]] || { rm -f "$tmp"; die "download failed for $id (http $code)"; }
   [[ -n $ctype ]] || ctype=image/jpeg
 
+  got=$(wc -c < "$tmp")
+  # Belt and braces for a proxy that closes early without curl noticing.
+  if [[ -n $clen ]] && (( got != clen )); then
+    rm -f "$tmp"
+    die "short read for $id ($got of $clen bytes)"
+  fi
   # A JSON body or an empty file here means a permission or server problem, not
   # a photo; refuse rather than caching the error page as an image.
-  if [[ $ctype != image/* ]] || (( $(wc -c < "$tmp") < 1024 )); then
+  if [[ $ctype != image/* ]] || (( got < 1024 )); then
     rm -f "$tmp"
     die "not an image ($ctype) for $id"
   fi
