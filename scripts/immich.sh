@@ -318,8 +318,13 @@ ext_for() {
 
 # Caption data for one asset: the photo's own date and where it was taken.
 # Cached beside the image so a repeat visit costs nothing.
+#
+# The path is built from the asset id, not from the image path it sits next to:
+# deriving it with ${1%.*} turned "<id>.caption.json" into
+# "<id>.caption.caption.json" whenever the caller had been handed the caption by
+# mistake, which is exactly the bug the cache-hit scan used to have.
 caption_json() {
-  local dest=$1 id=$2 cap="${1%.*}.caption.json"
+  local id=$1 cap="$IMG_DIR/$id.caption.json"
   if [[ ! -s $cap ]]; then
     api_get "/api/assets/$id" 2>/dev/null |
       jq -c '{date: (.fileCreatedAt // .localDateTime // ""),
@@ -334,11 +339,27 @@ cmd_fetch() {
   local id=${ARG:-}
   is_uuid "$id" || die "fetch needs a UUID asset id, got: $id"
 
-  local existing
-  existing=$(find "$IMG_DIR" -maxdepth 1 -name "$id.*" -print -quit)
+  # Which cached files count as this photo. `-name "$id.*"` also matched
+  # "<id>.caption.json", and then everything downstream went wrong: the caption
+  # was printed as the image path (the QML guard rejects .json, so a perfectly
+  # good photo counted as a failed fetch), the touch meant for the LRU landed on
+  # the caption, and caption_json built "<id>.caption.caption.json". readdir
+  # order decided whether a cached photo was usable at all.
+  local -a img_match=()
+  local ext
+  for ext in jpg jpeg png webp avif heic heif; do
+    img_match+=(-o -name "$id.$ext")
+  done
+  img_match=("${img_match[@]:1}")
+
+  # Newest first: if a re-download once stored a different content type, two
+  # files can exist for one id and the fresh one must win.
+  local existing=""
+  existing=$(find "$IMG_DIR" -maxdepth 1 -type f \( "${img_match[@]}" \) \
+               -printf '%T@ %p\n' 2>/dev/null | sort -rn | sed -n '1p' | cut -d' ' -f2-)
   if [[ -n $existing && -s $existing ]]; then
     touch "$existing"   # LRU: usage is recency
-    printf '%s\n%s\n' "$existing" "$(caption_json "$existing" "$id")"
+    printf '%s\n%s\n' "$existing" "$(caption_json "$id")"
     return 0
   fi
 
@@ -368,7 +389,11 @@ cmd_fetch() {
 
   local dest="$IMG_DIR/$id.$(ext_for "$ctype")"
   mv -f "$tmp" "$dest"
-  printf '%s\n%s\n' "$dest" "$(caption_json "$dest" "$id")"
+  # A previous download with a different content type leaves a second file for
+  # the same asset; keep the one that was just written.
+  find "$IMG_DIR" -maxdepth 1 -type f \( "${img_match[@]}" \) ! -path "$dest" \
+    -delete 2>/dev/null || true
+  printf '%s\n%s\n' "$dest" "$(caption_json "$id")"
 }
 
 # ---------------------------------------------------------------- prune
