@@ -34,7 +34,7 @@ with your own user permissions.
 | --- | --- |
 | `bash scripts/immich.sh …` | The only thing that talks to Immich: `curl` requests, a `jq` pipeline, and reads/writes under `cache.dir`. |
 | `lua scripts/config-to-json.lua` | Reads your config and prints the merged JSON. |
-| `stat -Lc %Y:%s <config>` | One stat every 1.5 s, to notice a config edit. |
+| `stat -Lc %Y:%s <config> <key>` | One stat every 1.5 s, to notice a config edit or a new key in the same file. |
 | `omarchy-shell lock isLocked` | Every 2 s while the photos are up, so the slideshow stops when the session locks. |
 
 `immich.sh` uses `curl` for HTTP and `jq` for JSON, plus coreutils (`mkdir`,
@@ -153,6 +153,11 @@ Three exceptions worth knowing:
   cache filled from one server must never be shown for another, not even after a
   restart. The first start after upgrading does this once, since caches created
   before this version carry no record of which server filled them.
+- **Rewriting the key file is a server change too.** The key's *contents* pick
+  the account, so replacing the key in place — same path, same config — rebuilds
+  the cache from the new account within a second or two and takes the previous
+  account's photo off the screen. If the new account has no photos, the
+  slideshow stops (`hidden: library-empty`) rather than keeping it up.
 
 Missing keys fall back to the defaults below; unknown keys, wrong types and
 out-of-range values are reported on the shell console instead of breaking the
@@ -241,6 +246,8 @@ Cache and key are yours to keep or delete:
 | Every photo is skipped, then `hidden: no-usable-assets` | every asset in the list answered 404 | the `skip-missing-media` lines name them; a restart probes each once |
 | `download interrupted for <id> (curl exit N)` or `short read` | the transfer did not finish — timeout, dropped connection, a proxy closing early | nothing is cached; the next attempt starts clean |
 | `image-unreadable:<id>` | a cached file vanished under a live path (eviction, or a cache reset) | the path is dropped and re-fetched; a second failure for the same asset sets it aside for the session |
+| `api-key-changed` then `library-empty`, `hidden: library-empty` | the key file now holds a key for an account with no photos | expected: the slideshow stops instead of leaving the previous account's photo on screen |
+| `drop-stale-photo` | a refresh returned a library that does not contain the photo on screen — another account, or a changed `source.*` | the photo is cleared and the next one from the newly loaded library appears |
 | Nothing happens when idle | `display.idle_seconds` is `0`, or another idle inhibitor is active |
 | Slideshow flashes and disappears | pointer/cursor over the screen moving during the arm window |
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
