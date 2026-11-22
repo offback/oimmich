@@ -101,6 +101,10 @@ Item {
     ? Number(Quickshell.env("OIMMICH_PRUNE_MS"))
     : 6 * 60 * 60 * 1000
 
+  // The key file's *content* selects the account, and changing it leaves every
+  // path in the config identical -- nothing else in the plugin could notice.
+  readonly property string keyPath: (cfg && cfg.server) ? String(cfg.server.api_key_file) : ""
+
   function logEvent(event) {
     lastEvent = event
     console.log("oimmich " + event)
@@ -246,6 +250,18 @@ Item {
       if (!missing[candidate]) return candidate
     }
     return ""
+  }
+
+  // Is this asset id part of the library that is loaded right now? Cached paths
+  // are keyed by id, so an id that is absent belongs to a library that is no
+  // longer loaded: another account behind the same key-file path, a changed
+  // album filter, or a photo that was deleted.
+  function manifestHas(id) {
+    for (var i = 0; i < manifestList.length; i++) {
+      var entry = manifestList[i]
+      if (entry && entry.id === id) return true
+    }
+    return false
   }
 
   function showNext() {
@@ -405,8 +421,32 @@ Item {
           root.prunedOnce = true
           root.runPrune()
         }
-        if (root.shown && root.current === "") root.showNext()
-        if (root.forceShow && !root.shown) root.start()
+        if (root.shown) {
+          // The photo on screen belongs to the library that was loaded when it
+          // appeared. A refresh can legitimately return a new library -- another
+          // account behind the same key-file path, a changed source filter -- and
+          // then the visible id is stale even though its file is still decoded in
+          // a layer. Left alone it never advances: an empty list means every tick
+          // finds nothing to show, so the old photo would stay up until input,
+          // lock or quit.
+          if (list.length === 0) {
+            root.logEvent("library-empty")
+            root.current = ""      // clears both layers
+            root.currentId = ""
+            root.stop("library-empty")
+          } else if (root.currentId !== "" && !root.manifestHas(root.currentId)) {
+            root.logEvent("drop-stale-photo")
+            root.current = ""      // clears both layers, then the next photo loads
+            root.currentId = ""
+            root.showNext()
+          } else if (root.current === "") {
+            root.showNext()
+          }
+        }
+        // Only a list that has something in it is worth starting on: starting on
+        // an empty one asks for a refresh, and a refresh that returns another empty
+        // list asks again -- a spawn loop, which is how this read before.
+        if (root.forceShow && !root.shown && list.length > 0) root.start()
       }
     }
     onExited: function (code) {
@@ -530,6 +570,7 @@ Item {
     // FileView is the documented way to watch, but the Lua config is read by a
     // child process anyway; polling its mtime is one stat every 1.5s.
     property string stamp: ""
+    property string keyStamp: ""
     onTriggered: {
       stampProc.running = true
     }
@@ -537,15 +578,32 @@ Item {
 
   Process {
     id: stampProc
-    command: ["bash", "-c", "stat -Lc %Y:%s -- \"$1\" 2>/dev/null || echo missing", "_", root.configPath]
+    // Two files matter: the config (settings and sources) and the key file, whose
+    // content picks the account. Editing a key in place leaves the config byte
+    // for byte identical, so without this the slideshow would keep showing the
+    // previous account until the hourly refresh came round.
+    command: ["bash", "-c",
+      "for f in \"$1\" \"$2\"; do stat -Lc '%Y:%s' -- \"$f\" 2>/dev/null || echo missing; done",
+      "_", root.configPath, root.keyPath]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        var s = String(text || "").trim()
-        if (configWatch.stamp === "") { configWatch.stamp = s; return }
-        if (s !== configWatch.stamp) {
-          configWatch.stamp = s
+        var parts = String(text || "").split(/\r?\n/)
+        var configStamp = parts.length > 0 ? parts[0].trim() : ""
+        var keyStamp = parts.length > 1 ? parts[1].trim() : ""
+        if (configWatch.stamp === "") {
+          configWatch.stamp = configStamp
+          configWatch.keyStamp = keyStamp
+          return
+        }
+        if (configStamp !== configWatch.stamp) {
+          configWatch.stamp = configStamp
           configProc.running = true
+        }
+        if (keyStamp !== configWatch.keyStamp) {
+          configWatch.keyStamp = keyStamp
+          root.logEvent("api-key-changed")
+          root.refreshManifest()
         }
       }
     }

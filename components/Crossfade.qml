@@ -49,7 +49,17 @@ Item {
     shown(path)
   }
 
-  onImagePathChanged: show(imagePath)
+  onImagePathChanged: {
+    // An empty path means nothing should be on screen. Clearing both layers is
+    // what stops a photo from a library that is no longer loaded from staying
+    // visible after the list changes underneath it.
+    if (!imagePath) {
+      pathA = ""
+      pathB = ""
+      return
+    }
+    show(imagePath)
+  }
 
   // Free the layer that has just been covered, so memory holds one photo, not a
   // slideshow's worth.
