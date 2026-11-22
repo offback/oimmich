@@ -24,6 +24,30 @@ blurred side fill, the 16:9 photo covers the screen with nothing to fill.
   there is nothing to install.
 - An Immich server you can reach over HTTP(S), and an API key.
 
+## What it runs
+
+The plugin is QML inside the Omarchy shell: no second Quickshell, no daemon, no
+root, nothing listening on a port. Every child process is short-lived and runs
+with your own user permissions.
+
+| Command | Why |
+| --- | --- |
+| `bash scripts/immich.sh …` | The only thing that talks to Immich: `curl` requests, a `jq` pipeline, and reads/writes under `cache.dir`. |
+| `lua scripts/config-to-json.lua` | Reads your config and prints the merged JSON. |
+| `stat -Lc %Y:%s <config>` | One stat every 1.5 s, to notice a config edit. |
+| `omarchy-shell lock isLocked` | Every 2 s while the photos are up, so the slideshow stops when the session locks. |
+
+`immich.sh` uses `curl` for HTTP and `jq` for JSON, plus coreutils (`mkdir`,
+`mv`, `find`, `du`, `stat`, `touch`, `sha256sum`, `date`). It writes only inside
+`cache.dir`, and reads the API key from `server.api_key_file` (`0600`) to send
+it as an `x-api-key` header to `server.url` and nowhere else.
+
+One thing worth knowing: **`config.lua` is executed, not parsed.**
+`config-to-json.lua` calls `dofile` on it, so it can run any Lua, `os.execute`
+included. That is deliberate — it is your own file in your own home, and it
+lets a config compute values — but a config copied from the internet is a
+program, not a document.
+
 ## Install
 
 **1. Add the plugin**

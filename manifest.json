@@ -1,5 +1,4 @@
 {
-  "$schema": "https://raw.githubusercontent.com/omarchy/omarchy/main/schemas/plugin.json",
   "schemaVersion": 1,
   "id": "io.github.offback.oimmich",
   "name": "oimmich",
