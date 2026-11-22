@@ -29,7 +29,10 @@ Item {
   Timer {
     interval: 1000
     repeat: true
-    running: root.showClock
+    // The date is formatted from the same `now`, so it has to tick when either
+    // is shown: with date on and clock off, gating on showClock alone froze the
+    // date at the moment the session started.
+    running: root.showClock || root.showDate
     onTriggered: root.now = new Date()
   }
 

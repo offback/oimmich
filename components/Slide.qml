@@ -24,6 +24,13 @@ Item {
   property int kenBurnsMs: 30000
   property bool running: true
 
+  // Emitted once when the file cannot be decoded — which is what a pruned cache
+  // entry looks like from here: a path that is still valid, a file that is gone.
+  // The caller drops the entry so the id is re-fetched instead of painted black.
+  signal failed(string path)
+  property bool reported: false
+  onSourceChanged: reported = false
+
   readonly property bool ready: fg.status === Image.Ready
   readonly property bool blurred: fill === "blur"
 
@@ -75,6 +82,13 @@ Item {
     sourceSize.height: Math.round(root.height)
     transformOrigin: Item.Center
     scale: 1.0
+
+    onStatusChanged: {
+      if (status === Image.Error && !root.reported) {
+        root.reported = true
+        root.failed(root.source)
+      }
+    }
   }
 
   NumberAnimation on scale {

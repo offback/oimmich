@@ -70,6 +70,9 @@ Item {
   // has no media", which does not change by waiting, so a queue refill must not
   // probe them again — and a run of them must not spawn a process each.
   property var missing: ({})
+  // How often a cached file failed to decode. Once is normal (prune evicted it);
+  // twice means the file itself is unreadable and re-fetching will not help.
+  property var decodeFailures: ({})
 
   readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/oimmich")
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
@@ -149,6 +152,7 @@ Item {
     paths = ({})
     captions = ({})
     missing = ({})
+    decodeFailures = ({})
     pending = []
     wanted = ""
     current = ""
@@ -172,6 +176,44 @@ Item {
       .map(function (a) { return a.id })
       .filter(function (id) { return !missing[id] })
     queue = (cfg && cfg.display && cfg.display.order === "sequential") ? ordered : shuffled(ordered)
+  }
+
+  // A cached path can outlive its file: prune evicts by size, and the origin
+  // reset removes everything. Qt reports the decode failure; the entry has to go,
+  // or the id stays "cached" forever and every cycle paints a black frame. The
+  // id is then re-fetched, which re-downloads the file — unless it has failed
+  // twice, in which case the file itself is broken and the asset is set aside.
+  function forgetPath(path) {
+    var id = ""
+    for (var key in paths) {
+      if (paths[key] === path) { id = key; break }
+    }
+    if (id === "") return
+
+    var next = paths
+    delete next[id]
+    root.paths = next
+
+    var seen = root.decodeFailures
+    seen[id] = (Number(seen[id]) || 0) + 1
+    root.decodeFailures = seen
+
+    if (seen[id] >= 2) {
+      var gone = root.missing
+      gone[id] = true
+      root.missing = gone
+      root.logEvent("image-unreadable-give-up:" + id.substring(0, 8))
+    } else {
+      root.logEvent("image-unreadable:" + id.substring(0, 8))
+    }
+
+    if (root.current === path) {
+      root.current = ""
+      root.currentId = ""
+      root.retrySoon()
+    } else {
+      root.fillPrefetch()
+    }
   }
 
   // A skipped or failed id asks for the next one through a short delay instead
@@ -609,6 +651,7 @@ Item {
         blurStrength: root.cfg && root.cfg.sizing ? Number(root.cfg.sizing.blur_strength) : 1.0
         darken: root.cfg && root.cfg.sizing ? Number(root.cfg.sizing.darken) : 0.08
         kenBurns: root.cfg && root.cfg.display ? !!root.cfg.display.ken_burns : true
+        onFailed: function (path) { root.forgetPath(path) }
       }
 
       Overlay {

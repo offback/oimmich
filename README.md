@@ -243,6 +243,7 @@ Cache and key are yours to keep or delete:
 | Bar and notifications vanish | plugin threw inside the shell: `omarchy restart shell`, then report it |
 | Config changes ignored | check the shell console for `oimmich config errors:` |
 | Photos never appear, log says `manifest unreadable` | the fetch script failed; the `oimmich manifest stderr:` line right after it says why — usually a wrong `server.api_key_file` |
+| `manifest hit the 400 page cap` | the library is bigger than 400 pages of 1000, or paging is looping: the build now fails instead of caching a prefix | narrow `source.albums` or the date window, or raise the cap in `scripts/immich.sh` |
 | Every photo appears after editing `source.albums` | the value is not a list — `albums = "Camera"` is rejected instead of being read as "everything" | `oimmich config errors: source.albums must be a list …` |
 | Slideshow gives up and stays away for five minutes | five consecutive download failures, so the server is unreachable: `fetch-failed:1 (5/5)`, then `fetch-cooldown: 5min` and `hidden: fetch-failures`. It tries again after the cooldown |
 

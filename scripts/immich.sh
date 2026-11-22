@@ -190,13 +190,22 @@ build_manifest() {
   # Two paging shapes, because Immich 3.2 moved to cursors: a `filter` object
   # cannot be combined with the deprecated `page` field (the server answers
   # "Deprecated field page cannot be combined with filter"), while the plain
-  # whole-library query still works by page number. Every page is retried before
-  # it is believed and the build fails rather than caching a truncated library.
+  # whole-library query still works by page number.
+  #
+  # A page is believed when its JSON parses. The walk ends on count == 0 (page
+  # mode) or a missing cursor — not on a short page, because the server has been
+  # seen to return 672 items and then full pages after it. Immich sets `count`
+  # to the number of assets in that same page, so comparing it against `items`
+  # would prove nothing; the retry below exists for truncated JSON, which is what
+  # a dropped connection actually looks like.
+  #
+  # The page cap is a runaway guard, not a limit anyone should reach: hitting it
+  # fails the build instead of caching a prefix of the library.
   local body items count tries
   if [[ $filter_json != "{}" ]]; then
     # Album mode: cursor walk. `type` is left out — it is rejected alongside a
     # filter — and the jq pass below keeps only image mimetypes.
-    local cursor="" next_cursor walk=0
+    local cursor="" next_cursor walk=0 finished=0
     while (( walk < 400 )); do
       walk=$((walk + 1))
       body=$(jq -cn --argjson f "$filter_json" --arg c "$cursor" \
@@ -214,16 +223,18 @@ build_manifest() {
         sleep $(( tries * 2 ))
       done
 
-      (( items == 0 )) && break
+      if (( items == 0 )); then finished=1; break; fi
       jq -c '.assets.items[] | {id, w: .width, h: .height, mime: .originalMimeType,
              type, date: .fileCreatedAt, name: .originalFileName}' <<<"$page_json" >> "$tmp_raw"
-      [[ -z $next_cursor ]] && break
+      if [[ -z $next_cursor ]]; then finished=1; break; fi
       cursor=$next_cursor
     done
-    (( walk >= 400 )) && note "warning: manifest stopped at the 400 page cap"
+    if (( finished == 0 )); then
+      die "manifest hit the 400 page cap after $walk pages; refusing to cache a truncated list (narrow source.albums or the date window, or raise the cap in scripts/immich.sh)"
+    fi
   else
     # Whole library: numbered pages, server-side IMAGE filter.
-    local page=1
+    local page=1 finished=0
     while (( page <= 400 )); do
       body=$(jq -cn --argjson p "$page" '{size:1000, page:$p, type:"IMAGE"}')
 
@@ -234,14 +245,14 @@ build_manifest() {
         [[ -n $page_json ]] || page_json='{}'
         count=$(jq -er '.assets.count' <<<"$page_json" 2>/dev/null) || count=-1
         items=$(jq -er '.assets.items | length' <<<"$page_json" 2>/dev/null) || items=-1
-        (( count >= 0 && items == count )) && break
+        (( count >= 0 && items >= 0 )) && break
         if (( tries >= 3 )); then
           die "page $page failed after $tries attempts (items=$items count=$count)"
         fi
         sleep $(( tries * 2 ))
       done
 
-      (( count == 0 )) && break
+      if (( count == 0 )); then finished=1; break; fi
       jq -c '.assets.items[] | {id, w: .width, h: .height, mime: .originalMimeType,
              type, date: .fileCreatedAt, name: .originalFileName}' <<<"$page_json" >> "$tmp_raw"
       # A short-but-non-empty page is not the end: the server has been seen to
@@ -249,7 +260,9 @@ build_manifest() {
       # last page silently dropped fifteen thousand photos.
       page=$((page + 1))
     done
-    (( page > 400 )) && note "warning: manifest stopped at the 400 page cap"
+    if (( finished == 0 )); then
+      die "manifest hit the 400 page cap after $((page - 1)) pages; refusing to cache a truncated list (narrow source.albums or the date window, or raise the cap in scripts/immich.sh)"
+    fi
   fi
 
   # Dedupe (an asset can sit in two albums), drop macOS AppleDouble stubs like
@@ -421,6 +434,11 @@ cmd_prune() {
 
   local removed=0
   # Oldest access first; touch-on-fetch above keeps this a real LRU.
+  # Leading-dot names are another process's in-flight download. Deleting one does
+  # not free its space while the writer holds the fd, yet `used` was decremented
+  # by the apparent size anyway — so prune could stop early believing it was
+  # under the cap — and the fetch it interrupted then failed for no good reason.
+  # The origin reset has always skipped them; this scan did not.
   while IFS= read -r f; do
     (( used <= cap_bytes )) && break
     local sz
@@ -428,7 +446,8 @@ cmd_prune() {
     rm -f "$f"
     used=$(( used - sz ))
     removed=$((removed + 1))
-  done < <(find "$IMG_DIR" -maxdepth 1 -type f -printf '%T@ %p\n' | sort -n | cut -d' ' -f2-)
+  done < <(find "$IMG_DIR" -maxdepth 1 -type f ! -name '.*' -printf '%T@ %p\n' |
+           sort -n | cut -d' ' -f2-)
 
   note "pruned $removed file(s); cache now $(( used / 1048576 )) MB / $(( cap_bytes / 1048576 )) MB"
 }

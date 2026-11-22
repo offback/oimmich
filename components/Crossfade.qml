@@ -22,6 +22,9 @@ Item {
   // Emitted once a crossfade completes, so the caller can prefetch ahead.
   signal shown(string path)
 
+  // Passed up from whichever Slide failed to decode its file.
+  signal failed(string path)
+
   readonly property string visiblePath: showingA ? pathA : pathB
 
   function show(path) {
@@ -58,6 +61,7 @@ Item {
     kenBurns: root.kenBurns ? 0.05 : 0
     kenBurnsMs: root.displayMs + root.fadeMs
     running: root.showingA
+    onFailed: function (path) { root.failed(path) }
     opacity: root.showingA ? 1 : 0
     Behavior on opacity {
       NumberAnimation { duration: Math.max(0, root.fadeMs); easing.type: Easing.InOutQuad }
@@ -75,6 +79,7 @@ Item {
     kenBurns: root.kenBurns ? 0.05 : 0
     kenBurnsMs: root.displayMs + root.fadeMs
     running: !root.showingA
+    onFailed: function (path) { root.failed(path) }
     opacity: root.showingA ? 0 : 1
     Behavior on opacity {
       NumberAnimation { duration: Math.max(0, root.fadeMs); easing.type: Easing.InOutQuad }
