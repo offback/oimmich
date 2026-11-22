@@ -66,6 +66,10 @@ Item {
   // Server + key file + cache dir of the config the in-memory library came
   // from. A change here means `paths` and `captions` refer to another server.
   property string dataIdentity: ""
+  // Asset ids that answered 404 this session. Immich uses 404 for "this asset
+  // has no media", which does not change by waiting, so a queue refill must not
+  // probe them again — and a run of them must not spawn a process each.
+  property var missing: ({})
 
   readonly property string cacheDir: cfg && cfg.cache ? cfg.cache.dir : (home + "/.cache/oimmich")
   readonly property int prefetchCount: cfg && cfg.display ? Number(cfg.display.prefetch) || 0 : 3
@@ -126,6 +130,7 @@ Item {
 
   function stop(reason) {
     if (!shown) return
+    retryTimer.stop()
     shown = false
     inputArmed = false
     lockPollTimer.stop()
@@ -143,6 +148,7 @@ Item {
     queue = []
     paths = ({})
     captions = ({})
+    missing = ({})
     pending = []
     wanted = ""
     current = ""
@@ -162,16 +168,48 @@ Item {
   }
 
   function refillQueue() {
-    var ordered = manifestList.map(function (a) { return a.id })
+    var ordered = manifestList
+      .map(function (a) { return a.id })
+      .filter(function (id) { return !missing[id] })
     queue = (cfg && cfg.display && cfg.display.order === "sequential") ? ordered : shuffled(ordered)
+  }
+
+  // A skipped or failed id asks for the next one through a short delay instead
+  // of calling showNext() inside the process handler. Queues full of broken
+  // assets then cost one process every 400ms rather than a spawn storm.
+  function retrySoon() {
+    if (!retryTimer.running) retryTimer.start()
+  }
+
+  // Next id worth trying, skipping anything already known to have no media.
+  function nextId() {
+    while (queue.length > 0) {
+      var candidate = queue.shift()
+      if (!missing[candidate]) return candidate
+    }
+    return ""
   }
 
   function showNext() {
     if (!shown) return
-    if (queue.length === 0) refillQueue()
-    if (queue.length === 0) { logEvent("queue-empty"); return }
 
-    var id = queue.shift()
+    var id = nextId()
+    if (id === "") {
+      refillQueue()
+      id = nextId()
+    }
+    if (id === "") {
+      // Nothing usable left. Saying so once and hiding beats an endless run of
+      // fetches for assets that will never arrive.
+      if (manifestList.length > 0) {
+        logEvent("queue-empty: all-assets-missing")
+        stop("no-usable-assets")
+      } else {
+        logEvent("queue-empty")
+      }
+      return
+    }
+
     wanted = id
 
     if (paths[id]) {
@@ -366,10 +404,15 @@ Item {
           root.fillPrefetch()
         }
       } else if (code === 3) {
-        // Asset has no media (an AppleDouble stub or a broken import): drop it
-        // and move on rather than stalling on the same id forever.
+        // Asset has no media (an AppleDouble stub or a broken import). Remember
+        // it for the session: otherwise every queue refill probes it again, and
+        // a run of them spawns a bash+curl process per id back to back. The
+        // rewrite is what makes the change visible to refillQueue's filter.
         root.logEvent("skip-missing-media")
-        if (root.shown && root.wanted === fetchProc.assetId) root.showNext()
+        var gone = root.missing
+        gone[fetchProc.assetId] = true
+        root.missing = gone
+        if (root.shown && root.wanted === fetchProc.assetId) root.retrySoon()
       } else {
         root.fetchFailures += 1
         root.logEvent("fetch-failed:" + code + " (" + root.fetchFailures + "/" + root.maxFetchFailures + ")")
@@ -384,7 +427,7 @@ Item {
           root.stop("fetch-failures")
           return
         }
-        if (root.shown && root.wanted === fetchProc.assetId) root.showNext()
+        if (root.shown && root.wanted === fetchProc.assetId) root.retrySoon()
       }
       root.pump()
     }
@@ -493,6 +536,15 @@ Item {
     interval: Math.max(1000, root.displayMs)
     repeat: true
     running: root.shown && root.current !== ""
+    onTriggered: root.showNext()
+  }
+
+  Timer {
+    id: retryTimer
+    // Enough delay that a queue of dead ids cannot fork bash+curl back to back,
+    // short enough that one bad photo costs nothing visible.
+    interval: 400
+    repeat: false
     onTriggered: root.showNext()
   }
 
