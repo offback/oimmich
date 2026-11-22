@@ -208,6 +208,7 @@ components/Crossfade.qml two Slides, cross-dissolved, old one freed after
 components/Overlay.qml   clock, date and the photo's own caption in a corner
 scripts/config-to-json.lua  config.lua -> merged, validated JSON (Lua, no deps)
 scripts/immich.sh        the only thing that talks to Immich (curl + jq)
+tests/                   behaviour tests against a fake Immich (see tests/README.md)
 config.example.lua       documented config
 preview.qml / shell.qml  development harness only, not loaded by the shell
 ```
@@ -282,6 +283,9 @@ scripts/immich.sh check <config.lua>
 scripts/immich.sh list  <config.lua> | jq length
 scripts/immich.sh fetch <config.lua> <asset-id>
 scripts/immich.sh prune <config.lua>
+
+# behaviour tests: the real plugin against a fake Immich, about 90 s
+python3 -m unittest discover -s tests -v
 
 # before publishing
 omarchy plugin validate .
